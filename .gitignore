@@ -1,0 +1,7 @@
+node_modules
+.eslintrc
+.prettierrc
+tsconfig.json
+sound
+soundBase64.js
+soundBase64.ts
