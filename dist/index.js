@@ -1,64 +1,77 @@
 "use strict";
-const canvas = document.querySelector('#canvas1');
+const container = document.querySelector('#container');
 const file = document.querySelector('#fileupload');
-const audio1 = document.querySelector('#audio1');
-canvas.height = window.innerHeight;
-canvas.width = window.innerWidth;
-const ctx = canvas.getContext('2d');
+const audio = document.querySelector('#audio1');
 class EffectAudio {
-    constructor(audio) {
-        this.audioCtx = new AudioContext();
-        this.audioSource = this.audioCtx.createMediaElementSource(audio);
-        this.analyser = this.audioCtx.createAnalyser();
-        this.audioSource.connect(this.analyser);
-        this.analyser.connect(this.audioCtx.destination);
+    constructor(audio, parentEl, analyser) {
+        this.audio = audio;
+        this._barWidth = 1;
+        this.drawVisualiser = undefined;
+        this._canvas = document.createElement('canvas');
+        this.ctx = this._canvas.getContext('2d');
+        parentEl.append(this._canvas);
+        this.analyser = analyser;
     }
     set fftSize(num) {
         this.analyser.fftSize = num;
     }
-    get frequencyBinCount() {
-        return this.analyser.frequencyBinCount;
+    get cnavas() {
+        return this._canvas;
     }
-    getByteFrequencyData(arr) {
-        this.analyser.getByteFrequencyData(arr);
+    set barWidth(num) {
+        this._barWidth = num;
     }
-    resume() {
-        this.audioCtx.resume();
+    animationFrame(fn) {
+        if (!this.drawVisualiser)
+            throw new Error('not set function drawVisuliser');
+        const x = 0;
+        const barWidth = this._barWidth;
+        const uint8Array = new Uint8Array(this.analyser.frequencyBinCount);
+        this.ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+        this.analyser.getByteFrequencyData(uint8Array);
+        this.drawVisualiser(this.analyser.frequencyBinCount, x, barWidth, uint8Array, this.ctx);
+        if (this.audio.currentTime >= this.audio.duration &&
+            !uint8Array.find((element) => element > 1)) {
+            this.drawVisualiser(this.analyser.frequencyBinCount, x, barWidth, uint8Array, this.ctx);
+            fn && fn();
+        }
+        else {
+            requestAnimationFrame(() => this.animationFrame(fn));
+        }
+    }
+    setDrawisualiser(fn) {
+        this.drawVisualiser = fn;
     }
 }
-let effectAudio;
+const audioCtx = new AudioContext();
+let audioSource;
 file.addEventListener('change', () => {
     if (!file.files)
         return;
+    document.querySelector('#canvas1') &&
+        container.removeChild(document.querySelector('#canvas1'));
     const files = file.files;
-    if (!effectAudio)
-        effectAudio = new EffectAudio(audio1);
-    audio1.src = URL.createObjectURL(files[0]);
-    effectAudio.resume();
-    audio1.load();
-    audio1.play();
-    effectAudio.fftSize = 512; //default 2048
-    const bufferLength = effectAudio.frequencyBinCount;
-    const dataArray = new Uint8Array(bufferLength);
-    const barWidth = 2; //canvas.width / bufferLength;
-    const animate = function () {
-        if (!ctx)
-            return;
-        const x = 0;
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        effectAudio.getByteFrequencyData(dataArray);
-        drawVisualiser(bufferLength, x, barWidth, dataArray);
-        if (audio1.currentTime >= audio1.duration &&
-            !dataArray.find((element) => element > 1)) {
-            drawVisualiser(bufferLength, x, barWidth, dataArray);
-        }
-        else {
-            requestAnimationFrame(animate);
-        }
-    };
-    requestAnimationFrame(animate);
+    audio.src = URL.createObjectURL(files[0]);
+    audioCtx.resume();
+    const analyser = audioCtx.createAnalyser();
+    const effectAudio = new EffectAudio(audio, container, analyser);
+    audio.load();
+    audio.play();
+    if (!audioSource)
+        audioSource = audioCtx.createMediaElementSource(audio);
+    audioSource.connect(analyser);
+    analyser.connect(audioCtx.destination);
+    effectAudio.fftSize = 512;
+    effectAudio.barWidth = 2;
+    effectAudio.cnavas.width = window.innerWidth;
+    effectAudio.cnavas.height = window.innerHeight;
+    effectAudio.cnavas.setAttribute('id', 'canvas1');
+    effectAudio.setDrawisualiser(drawVisualiser);
+    effectAudio.animationFrame(() => {
+        container.removeChild(effectAudio.cnavas);
+    });
 });
-function drawVisualiser(bufferLength, x, barWidth, dataArray) {
+function drawVisualiser(bufferLength, x, barWidth, dataArray, ctx) {
     if (!ctx)
         return;
     let barHeight;
@@ -66,12 +79,11 @@ function drawVisualiser(bufferLength, x, barWidth, dataArray) {
     for (let i = 0; i < bufferLength; i++) {
         barHeight = dataArray[i] * 2;
         ctx.save();
-        ctx.translate(canvas.width / 2, canvas.height / 2);
+        ctx.translate(400 / 2, 400 / 2);
         ctx.rotate((i * Math.PI * 4) / bufferLength);
         r = (i * barHeight) / 20;
         g = i * 4;
         b = barHeight / 2;
-        // const red
         ctx.fillStyle = `rgb(${r},${g},${b})`;
         ctx.fillRect(0, 0, barWidth, barHeight);
         x += barWidth;
